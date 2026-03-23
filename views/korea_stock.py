@@ -122,10 +122,23 @@ def render_korea_stock_page():
                 else:
                     foreign_avg_price = None
                     foreign_net_vol = 0 # 0주 매집
+                    
+                # --- [개인 로직] ---
+                retail_buy_days_vol = df_investor_vol[df_investor_vol['개인'] > 0]['개인']
+                retail_buy_days_val = df_investor_val[df_investor_val['개인'] > 0]['개인']
+                
+                if not retail_buy_days_vol.empty:
+                    retail_net_vol = retail_buy_days_vol.sum()
+                    retail_net_val = retail_buy_days_val.sum()
+                    retail_avg_price = retail_net_val / retail_net_vol
+                else:
+                    retail_avg_price = None
+                    retail_net_vol = 0
 
                 # 전체 기간의 순합계 계산
                 total_inst_net_vol = df_investor_vol['기관합계'].sum()
                 total_foreign_net_vol = df_investor_vol['외국인합계'].sum()
+                total_retail_net_vol = df_investor_vol['개인'].sum()
 
                 # 2. 차트 그리기 (Plotly 사용)
                 if not df_ohlcv.empty:
@@ -139,8 +152,9 @@ def render_korea_stock_page():
                         line=dict(color='#ff9900', width=2)
                     ))
 
-                    inst_percentage = df_ohlcv['종가'].iloc[-1] / inst_avg_price * 100 - 100
-                    foreign_percentage = df_ohlcv['종가'].iloc[-1] / foreign_avg_price * 100 - 100
+                    inst_percentage = (df_ohlcv['종가'].iloc[-1] / inst_avg_price * 100 - 100) if inst_avg_price else 0
+                    foreign_percentage = (df_ohlcv['종가'].iloc[-1] / foreign_avg_price * 100 - 100) if foreign_avg_price else 0
+                    retail_percentage = (df_ohlcv['종가'].iloc[-1] / retail_avg_price * 100 - 100) if retail_avg_price else 0
 
                     # 기관 평단가 가로선 추가 (매집 상태일 때만)
                     if inst_avg_price is not None and total_inst_net_vol > 0:
@@ -157,6 +171,14 @@ def render_korea_stock_page():
                             annotation_text=f"🌎 외인 평단: {int(foreign_avg_price):,}원 ({'+' if foreign_percentage >= 0 else ''}{foreign_percentage:.2f}%)", 
                             annotation_position="bottom right"
                         )
+                        
+                    # 개인 평단가 가로선 추가 (매집 상태일 때만)
+                    if retail_avg_price is not None and total_retail_net_vol > 0:
+                        fig.add_hline(
+                            y=retail_avg_price, line_dash="dash", line_color="#ff3366", 
+                            annotation_text=f"🧍 개인 평단: {int(retail_avg_price):,}원 ({'+' if retail_percentage >= 0 else ''}{retail_percentage:.2f}%)", 
+                            annotation_position="bottom left"
+                        )
                     
                     # 레이아웃 최적화 (마우스 휠 축소 시 빈공간 깨짐 방지 위해 x축 범위 고정)
                     fig.update_layout(
@@ -171,12 +193,90 @@ def render_korea_stock_page():
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
+                    
+                    # 3. 추가 차트: 투자자별(기관/외국인/개인) 누적 순매수량 동시 표시
+                    st.markdown("### 📊 투자자별 누적 순매수량 추이")
+                    
+                    df_cum_inst = df_investor_vol['기관합계'].cumsum()
+                    df_cum_foreign = df_investor_vol['외국인합계'].cumsum()
+                    df_cum_retail = df_investor_vol['개인'].cumsum()
+                    
+                    fig_cum = go.Figure()
+                    
+                    # 개인 선 추가
+                    fig_cum.add_trace(go.Scatter(
+                        x=df_cum_retail.index, y=df_cum_retail, 
+                        mode='lines', name='개인 누적순매수', 
+                        line=dict(color="#ff3366", width=2)
+                    ))
+                    
+                    # 기관 선 추가
+                    fig_cum.add_trace(go.Scatter(
+                        x=df_cum_inst.index, y=df_cum_inst, 
+                        mode='lines', name='기관 누적순매수', 
+                        line=dict(color="#00cc66", width=2)
+                    ))
+                    
+                    # 외국인 선 추가
+                    fig_cum.add_trace(go.Scatter(
+                        x=df_cum_foreign.index, y=df_cum_foreign, 
+                        mode='lines', name='외국인 누적순매수', 
+                        line=dict(color="#3399ff", width=2)
+                    ))
+                    
+                    fig_cum.update_layout(
+                        margin=dict(l=0, r=0, t=10, b=0),
+                        xaxis=dict(
+                            range=[df_cum_inst.index.min(), df_cum_inst.index.max()],
+                            fixedrange=False
+                        ),
+                        yaxis_title="누적 수량 (주)",
+                        hovermode="x unified",
+                        showlegend=True,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    
+                    st.plotly_chart(fig_cum, use_container_width=True)
+                    
                 else:
                     st.warning("선택한 기간의 주가 데이터가 존재하지 않습니다.")
 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
 
                 with col1:
+                    if retail_avg_price:
+                        if total_retail_net_vol > 0:
+                            st.metric(
+                                label="🧍 개인 매집 평단", 
+                                value=f"{int(retail_avg_price):,} 원",
+                                delta="매집 중"
+                            )
+                            st.caption(f"순매수량: {retail_net_vol:,}주")
+                        else:
+                            st.metric(
+                                label="🧍 개인 수급 상태", 
+                                value="순매도(이탈) 중",
+                                delta="이탈 우위",
+                                delta_color="inverse"
+                            )
+                            st.write(f"최근 {period}간 팔고 나가는 중입니다.")
+                            st.write(f"단, 일시적 매수 유입 시 평균가는 {int(retail_avg_price):,}원입니다.")
+                    else:
+                        st.metric(
+                            label="🧍 개인 수급 상태", 
+                            value="계산 불가",
+                            delta="이탈 우위",
+                            delta_color="inverse"
+                        )
+                        st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+
+                with col2:
                     if inst_avg_price:
                         if total_inst_net_vol > 0:
                             st.metric(
@@ -192,7 +292,7 @@ def render_korea_stock_page():
                                 delta="이탈 우위",
                                 delta_color="inverse"
                             )
-                            st.write(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+                            st.write(f"최근 {period}간 팔고 나가는 중입니다.")
                             st.write(f"단, 일시적 매수 유입 시 평균가는 {int(inst_avg_price):,}원입니다.")
                     else:
                         st.metric(
@@ -203,7 +303,7 @@ def render_korea_stock_page():
                         )
                         st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
 
-                with col2:
+                with col3:
                     if foreign_avg_price:
                         if total_foreign_net_vol > 0:
                             st.metric(
@@ -219,7 +319,7 @@ def render_korea_stock_page():
                                 delta="이탈 우위",
                                 delta_color="inverse"
                             )
-                            st.write(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+                            st.write(f"최근 {period}간 팔고 나가는 중입니다.")
                             st.write(f"단, 일시적 매수 유입 시 평균가는 {int(foreign_avg_price):,}원입니다.")
                     else:
                         st.metric(
