@@ -1,0 +1,235 @@
+import streamlit as st
+
+from services.krx_data import find_stocks, load_stock_universe
+
+
+def render_korea_stock_page():
+    st.subheader("외국인/기관 수급 및 평단가 추적")
+
+    if "selected_stock" not in st.session_state:
+        st.session_state.selected_stock = None
+
+    universe, load_error, login_status = load_stock_universe()
+
+    if login_status:
+        st.caption(login_status)
+
+    if load_error:
+        st.error(load_error)
+        st.caption("가상환경에서 pip install pykrx 후 다시 실행해 주세요.")
+        return
+
+    if not universe:
+        st.warning("조회 가능한 종목 데이터가 없습니다.")
+        return
+
+    st.caption(f"총 {len(universe):,}개 종목")
+
+    if st.session_state.selected_stock is None:
+        keyword = st.text_input(
+            "종목명 또는 종목코드 검색",
+            placeholder="예: 삼성전자 또는 005930",
+        )
+        matched = find_stocks(universe, keyword)
+
+        st.markdown("### 검색 결과")
+        result_box = st.container(border=True)
+
+        with result_box:
+            if not matched:
+                st.warning("검색 결과가 없습니다.")
+            else:
+                for item in matched:
+                    col1, col2, col3 = st.columns([3, 2, 1])
+                    col1.write(item["name"])
+                    col2.write(item["code"])
+                    if col3.button(
+                        "분석 보기",
+                        key=f"open-{item['code']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.selected_stock = item
+                        st.rerun()
+    else:
+        selected = st.session_state.selected_stock
+        left, right = st.columns([4, 1])
+        left.markdown(f"### {selected['name']} ({selected['code']}) 분석")
+        if right.button("검색으로", use_container_width=True):
+            st.session_state.selected_stock = None
+            st.rerun()
+
+        period = st.radio(
+            "조회 기간 선택", 
+            ["1개월", "6개월", "1년"], 
+            horizontal=True, 
+            index=1 # 기본값 6개월
+        )
+        
+        from datetime import datetime, timedelta
+        from pykrx import stock
+        
+        today = datetime.today()
+        
+        # 선택된 기간에 따른 시작일 계산
+        if period == "1개월":
+            days = 30
+        elif period == "6개월":
+            days = 180
+        else:
+            days = 365
+            
+        target_date = today - timedelta(days=days)
+        
+        end_date = today.strftime("%Y%m%d")
+        start_date = target_date.strftime("%Y%m%d")
+        ticker = selected['code']
+        
+        st.markdown(f"### 📈 최근 {period} 주가 추이 및 수급 평단가")
+        st.caption(f"조회 기간: **{start_date} ~ {end_date}**")
+        
+        with st.spinner("주가 및 수급 데이터를 불러오는 중입니다..."):
+            try:
+                # 1. 데이터 조회
+                df_ohlcv = stock.get_market_ohlcv_by_date(start_date, end_date, ticker)
+                
+                # 1. 일자별 투자자별 순매수량 및 매수대금 데이터 가져오기
+                # 이 함수는 날짜별로 외국인, 기관 등의 순매수 수량/대금을 리턴합니다.
+                df_investor_val = stock.get_market_trading_value_by_date(start_date, end_date, ticker)
+                df_investor_vol = stock.get_market_trading_volume_by_date(start_date, end_date, ticker)
+
+                # --- [기관합계 로직] ---
+                # 순매수량이 0보다 큰(매집한) 날만 필터링
+                inst_buy_days_vol = df_investor_vol[df_investor_vol['기관합계'] > 0]['기관합계']
+                inst_buy_days_val = df_investor_val[df_investor_val['기관합계'] > 0]['기관합계']
+                
+                if not inst_buy_days_vol.empty:
+                    inst_net_vol = inst_buy_days_vol.sum()
+                    inst_net_val = inst_buy_days_val.sum()
+                    inst_avg_price = inst_net_val / inst_net_vol
+                else:
+                    inst_avg_price = None
+                    inst_net_vol = 0 # 0주 매집
+
+                # --- [외국인 로직] ---
+                # 순매수량이 0보다 큰(매집한) 날만 필터링
+                foreign_buy_days_vol = df_investor_vol[df_investor_vol['외국인합계'] > 0]['외국인합계']
+                foreign_buy_days_val = df_investor_val[df_investor_val['외국인합계'] > 0]['외국인합계']
+                
+                if not foreign_buy_days_vol.empty:
+                    foreign_net_vol = foreign_buy_days_vol.sum()
+                    foreign_net_val = foreign_buy_days_val.sum()
+                    foreign_avg_price = foreign_net_val / foreign_net_vol
+                else:
+                    foreign_avg_price = None
+                    foreign_net_vol = 0 # 0주 매집
+
+                # 전체 기간의 순합계 계산
+                total_inst_net_vol = df_investor_vol['기관합계'].sum()
+                total_foreign_net_vol = df_investor_vol['외국인합계'].sum()
+
+                # 2. 차트 그리기 (Plotly 사용)
+                if not df_ohlcv.empty:
+                    import plotly.graph_objects as go
+                    
+                    fig = go.Figure()
+                    # 종가 라인 차트
+                    fig.add_trace(go.Scatter(
+                        x=df_ohlcv.index, y=df_ohlcv['종가'], 
+                        mode='lines', name='종가', 
+                        line=dict(color='#ff9900', width=2)
+                    ))
+
+                    inst_percentage = df_ohlcv['종가'].iloc[-1] / inst_avg_price * 100 - 100
+                    foreign_percentage = df_ohlcv['종가'].iloc[-1] / foreign_avg_price * 100 - 100
+
+                    # 기관 평단가 가로선 추가 (매집 상태일 때만)
+                    if inst_avg_price is not None and total_inst_net_vol > 0:
+                        fig.add_hline(
+                            y=inst_avg_price, line_dash="dash", line_color="#00cc66", 
+                            annotation_text=f"🏢 기관 평단: {int(inst_avg_price):,}원 ({'+' if inst_percentage >= 0 else ''}{inst_percentage:.2f}%)", 
+                            annotation_position="top left"
+                        )
+                        
+                    # 외국인 평단가 가로선 추가 (매집 상태일 때만)
+                    if foreign_avg_price is not None and total_foreign_net_vol > 0:
+                        fig.add_hline(
+                            y=foreign_avg_price, line_dash="dash", line_color="#3399ff", 
+                            annotation_text=f"🌎 외인 평단: {int(foreign_avg_price):,}원 ({'+' if foreign_percentage >= 0 else ''}{foreign_percentage:.2f}%)", 
+                            annotation_position="bottom right"
+                        )
+                    
+                    # 레이아웃 최적화 (마우스 휠 축소 시 빈공간 깨짐 방지 위해 x축 범위 고정)
+                    fig.update_layout(
+                        margin=dict(l=0, r=0, t=10, b=0),
+                        xaxis=dict(
+                            range=[df_ohlcv.index.min(), df_ohlcv.index.max()],
+                            fixedrange=False # 확대는 가능하게 허용
+                        ),
+                        yaxis_title="주가 (원)",
+                        hovermode="x unified",
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("선택한 기간의 주가 데이터가 존재하지 않습니다.")
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if inst_avg_price:
+                        if total_inst_net_vol > 0:
+                            st.metric(
+                                label="🏢 기관 매집 평단", 
+                                value=f"{int(inst_avg_price):,} 원",
+                                delta="매집 중"
+                            )
+                            st.caption(f"순매수량: {inst_net_vol:,}주")
+                        else:
+                            st.metric(
+                                label="🏢 기관 수급 상태", 
+                                value="순매도(이탈) 중",
+                                delta="이탈 우위",
+                                delta_color="inverse"
+                            )
+                            st.write(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+                            st.write(f"단, 일시적 매수 유입 시 평균가는 {int(inst_avg_price):,}원입니다.")
+                    else:
+                        st.metric(
+                            label="🏢 기관 수급 상태", 
+                            value="계산 불가",
+                            delta="이탈 우위",
+                            delta_color="inverse"
+                        )
+                        st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+
+                with col2:
+                    if foreign_avg_price:
+                        if total_foreign_net_vol > 0:
+                            st.metric(
+                                label="🌎 외인 매집 평단", 
+                                value=f"{int(foreign_avg_price):,} 원",
+                                delta="매집 중"
+                            )
+                            st.caption(f"순매수량: {foreign_net_vol:,}주")
+                        else:
+                            st.metric(
+                                label="🌎 외인 수급 상태", 
+                                value="순매도(이탈) 중",
+                                delta="이탈 우위",
+                                delta_color="inverse"
+                            )
+                            st.write(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+                            st.write(f"단, 일시적 매수 유입 시 평균가는 {int(foreign_avg_price):,}원입니다.")
+                    else:
+                        st.metric(
+                            label="🌎 외인 수급 상태", 
+                            value="계산 불가",
+                            delta="이탈 우위",
+                            delta_color="inverse"
+                        )
+                        st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+                    
+            except Exception as e:
+                st.error("투자자별 데이터를 불러오는 데 실패했습니다.")
+                st.exception(e)
