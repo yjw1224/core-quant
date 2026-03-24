@@ -1,6 +1,6 @@
 import streamlit as st
 
-from services.krx_data import find_stocks, load_stock_universe
+from services.krx_data import find_stocks, load_stock_universe, login_krx
 
 
 def render_korea_stock_page():
@@ -40,8 +40,8 @@ def render_korea_stock_page():
             else:
                 for item in matched:
                     col1, col2, col3 = st.columns([3, 2, 1])
-                    col1.write(item["code"])
-                    col2.write(item["name"])
+                    col1.write(item["name"])
+                    col2.write(item["code"])
                     if col3.button(
                         "분석 보기",
                         key=f"open-{item['code']}",
@@ -88,6 +88,10 @@ def render_korea_stock_page():
         
         with st.spinner("주가 및 수급 데이터를 불러오는 중입니다..."):
             try:
+                # KRX 정보데이터시스템 로그인 (환경 변수 또는 st.secrets에 등록된 계정 정보 사용)
+                if not login_krx():
+                    st.warning("KRX 로그인에 실패했습니다. 일부 데이터 조회가 제한될 수 있습니다.")
+
                 # 1. 데이터 조회
                 df_ohlcv = stock.get_market_ohlcv_by_date(start_date, end_date, ticker)
                 

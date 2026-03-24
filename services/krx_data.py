@@ -112,6 +112,24 @@ def _login_krx_and_patch_pykrx(session: requests.Session, login_id: str, login_p
     pykrx_webio.requests = _SessionRequestsProxy(session)
     return True, None
 
+def login_krx(login_id: str = None, login_pw: str = None) -> bool:
+    """
+    KRX 정보데이터시스템에 로그인하고 pykrx 모듈이 로그인 세션을 사용하도록 패치합니다.
+    """
+    if not login_id or not login_pw:
+        env_id, env_pw = _get_krx_credentials()
+        login_id = login_id or env_id
+        login_pw = login_pw or env_pw
+
+    if not login_id or not login_pw:
+        print("KRX 로그인 아이디 또는 비밀번호가 제공되지 않았습니다.")
+        return False
+
+    session = requests.Session()
+    success, msg = _login_krx_and_patch_pykrx(session, login_id, login_pw)
+    if not success:
+        print(msg)
+    return success
 
 @st.cache_data(show_spinner="CSV 파일에서 전종목 목록 로딩 중...")
 def load_stock_universe():
@@ -134,8 +152,8 @@ def load_stock_universe():
             df = pd.read_csv(file_path, dtype=str, encoding='cp949')
         
         # CSV 컬럼명 유연하게 처리 (코드/종목코드/code, 이름/종목명/name 등 자동 매칭)
-        code_col = 'code' if 'code' in df.columns else ('종목코드' if '종목코드' in df.columns else df.columns[2])
-        name_col = 'name' if 'name' in df.columns else ('종목명' if '종목명' in df.columns else df.columns[1])
+        code_col = 'code' if 'code' in df.columns else ('종목코드' if '종목코드' in df.columns else df.columns[1])
+        name_col = 'name' if 'name' in df.columns else ('종목명' if '종목명' in df.columns else df.columns[2])
         
         for _, row in df.iterrows():
             code = str(row[code_col]).strip()
