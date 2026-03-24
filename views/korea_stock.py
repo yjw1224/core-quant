@@ -89,6 +89,7 @@ def render_korea_stock_page():
                 index=1 # 기본값 6개월
             )
             fetch_submitted = st.form_submit_button("데이터 조회하기", type="primary")
+            st.caption("api 과다 호출을 막기 위한 버튼입니다.")
 
         if fetch_submitted:
             st.session_state.data_fetched = True
@@ -110,9 +111,6 @@ def render_korea_stock_page():
             end_date = today.strftime("%Y%m%d")
             start_date = target_date.strftime("%Y%m%d")
             ticker = selected['code']
-            
-            st.markdown(f"### 📈 최근 {active_period} 주가 추이 및 수급 평단가")
-            st.caption(f"조회 기간: **{start_date} ~ {end_date}**")
             
             with st.spinner("주가 및 수급 데이터를 불러오는 중입니다..."):
                 try:
@@ -165,6 +163,103 @@ def render_korea_stock_page():
                     total_foreign_net_vol = df_investor_vol['외국인합계'].sum()
                     total_retail_net_vol = df_investor_vol['개인'].sum()
 
+                    # 수익률(수급 평단가 대비 현재 주가의 퍼센티지) 계산을 먼저 수행합니다.
+                    if not df_ohlcv.empty:
+                        current_price = df_ohlcv['종가'].iloc[-1]
+                        inst_percentage = (current_price / inst_avg_price * 100 - 100) if inst_avg_price else 0
+                        foreign_percentage = (current_price / foreign_avg_price * 100 - 100) if foreign_avg_price else 0
+                        retail_percentage = (current_price / retail_avg_price * 100 - 100) if retail_avg_price else 0
+                    else:
+                        inst_percentage = foreign_percentage = retail_percentage = 0
+
+                    # 1.5 투자자별 매집 상태 요약(Metric)을 차트 위로 이동
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        if retail_avg_price:
+                            if total_retail_net_vol > 0:
+                                st.metric(
+                                    label="🧍 개인 매집 평단", 
+                                    value=f"{int(retail_avg_price):,}원",
+                                    delta=f"매집 중 ({'+' if retail_percentage >= 0 else ''}{retail_percentage:.2f}%)"
+                                )
+                                st.caption(f"순매수량: {retail_net_vol:,}주")
+                            else:
+                                st.metric(
+                                    label="🧍 개인 수급 상태", 
+                                    value="순매도(이탈) 중",
+                                    delta="이탈 우위",
+                                    delta_color="inverse"
+                                )
+                                st.write(f"최근 {period}간 팔고 나가는 중입니다.")
+                        else:
+                            st.metric(
+                                label="🧍 개인 수급 상태", 
+                                value="계산 불가",
+                                delta="이탈 우위",
+                                delta_color="inverse"
+                            )
+                            st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+
+                    with col2:
+                        if inst_avg_price:
+                            if total_inst_net_vol > 0:
+                                st.metric(
+                                    label="🏢 기관 매집 평단", 
+                                    value=f"{int(inst_avg_price):,}원",
+                                    delta=f"매집 중 ({'+' if inst_percentage >= 0 else ''}{inst_percentage:.2f}%)"
+                                )
+                                st.caption(f"순매수량: {inst_net_vol:,}주")
+                            else:
+                                st.metric(
+                                    label="🏢 기관 수급 상태", 
+                                    value="순매도(이탈) 중",
+                                    delta="이탈 우위",
+                                    delta_color="inverse"
+                                )
+                                st.write(f"최근 {period}간 팔고 나가는 중입니다.")
+                                st.write(f"단, 일시적 매수 유입 시 평균가는 {int(inst_avg_price):,}원입니다.")
+                        else:
+                            st.metric(
+                                label="🏢 기관 수급 상태", 
+                                value="계산 불가",
+                                delta="이탈 우위",
+                                delta_color="inverse"
+                            )
+                            st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+
+                    with col3:
+                        if foreign_avg_price:
+                            if total_foreign_net_vol > 0:
+                                st.metric(
+                                    label="🌎 외인 매집 평단", 
+                                    value=f"{int(foreign_avg_price):,}원",
+                                    delta=f"매집 중 ({'+' if foreign_percentage >= 0 else ''}{foreign_percentage:.2f}%)"
+                                )
+                                st.caption(f"순매수량: {foreign_net_vol:,}주")
+                            else:
+                                st.metric(
+                                    label="🌎 외인 수급 상태", 
+                                    value="순매도(이탈) 중",
+                                    delta="이탈 우위",
+                                    delta_color="inverse"
+                                )
+                                st.write(f"최근 {period}간 팔고 나가는 중입니다.")
+                                st.write(f"단, 일시적 매수 유입 시 평균가는 {int(foreign_avg_price):,}원입니다.")
+                        else:
+                            st.metric(
+                                label="🌎 외인 수급 상태", 
+                                value="계산 불가",
+                                delta="이탈 우위",
+                                delta_color="inverse"
+                            )
+                            st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
+
+                            
+            
+                    st.markdown(f"### 📈 최근 {active_period} 주가 추이 및 수급 평단가")
+                    # st.caption(f"조회 기간: **{start_date} ~ {end_date}**")
+
                     # 2. 차트 그리기 (Plotly 사용)
                     if not df_ohlcv.empty:
                         import plotly.graph_objects as go
@@ -207,6 +302,7 @@ def render_korea_stock_page():
                         
                         # 레이아웃 최적화 (마우스 휠 축소 시 빈공간 깨짐 방지 위해 x축 범위 고정)
                         fig.update_layout(
+                            height=350,
                             margin=dict(l=0, r=0, t=10, b=0),
                             xaxis=dict(
                                 range=[df_ohlcv.index.min(), df_ohlcv.index.max()],
@@ -232,24 +328,28 @@ def render_korea_stock_page():
                         fig_cum.add_trace(go.Scatter(
                             x=df_cum_retail.index, y=df_cum_retail, 
                             mode='lines', name='개인 누적순매수', 
-                            line=dict(color="#fafafa", width=3)
+                            line=dict(color="#fafafa", width=3),
+                            hovertemplate='<b>개인</b> 누적순매수: %{y:,.0f}주<extra></extra>'
                         ))
                         
                         # 기관 선 추가
                         fig_cum.add_trace(go.Scatter(
                             x=df_cum_inst.index, y=df_cum_inst, 
-                            mode='lines', name='기관 누적순매수', 
-                            line=dict(color="#3363ff", width=3)
+                            mode='lines', name='기관 누적순매수',
+                            line=dict(color="#3363ff", width=3),
+                            hovertemplate='<b>기관</b> 누적순매수: %{y:,.0f}주<extra></extra>'
                         ))
                         
                         # 외국인 선 추가
                         fig_cum.add_trace(go.Scatter(
                             x=df_cum_foreign.index, y=df_cum_foreign, 
                             mode='lines', name='외국인 누적순매수', 
-                            line=dict(color="#fc2727", width=3)
+                            line=dict(color="#fc2727", width=3),
+                            hovertemplate='<b>외국인</b> 누적순매수: %{y:,.0f}주<extra></extra>'
                         ))
                         
                         fig_cum.update_layout(
+                            height=300,
                             margin=dict(l=0, r=0, t=10, b=0),
                             xaxis=dict(
                                 range=[df_cum_inst.index.min(), df_cum_inst.index.max()],
@@ -277,89 +377,6 @@ def render_korea_stock_page():
                     else:
                         st.warning("선택한 기간의 주가 데이터가 존재하지 않습니다.")
 
-                    col1, col2, col3 = st.columns(3)
-
-                    with col1:
-                        if retail_avg_price:
-                            if total_retail_net_vol > 0:
-                                st.metric(
-                                    label="🧍 개인 매집 평단", 
-                                    value=f"{int(retail_avg_price):,} 원",
-                                    delta="매집 중"
-                                )
-                                st.caption(f"순매수량: {retail_net_vol:,}주")
-                            else:
-                                st.metric(
-                                    label="🧍 개인 수급 상태", 
-                                    value="순매도(이탈) 중",
-                                    delta="이탈 우위",
-                                    delta_color="inverse"
-                                )
-                                st.write(f"최근 {period}간 팔고 나가는 중입니다.")
-                                st.write(f"단, 일시적 매수 유입 시 평균가는 {int(retail_avg_price):,}원입니다.")
-                        else:
-                            st.metric(
-                                label="🧍 개인 수급 상태", 
-                                value="계산 불가",
-                                delta="이탈 우위",
-                                delta_color="inverse"
-                            )
-                            st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
-
-                    with col2:
-                        if inst_avg_price:
-                            if total_inst_net_vol > 0:
-                                st.metric(
-                                    label="🏢 기관 매집 평단", 
-                                    value=f"{int(inst_avg_price):,} 원",
-                                    delta="매집 중"
-                                )
-                                st.caption(f"순매수량: {inst_net_vol:,}주")
-                            else:
-                                st.metric(
-                                    label="🏢 기관 수급 상태", 
-                                    value="순매도(이탈) 중",
-                                    delta="이탈 우위",
-                                    delta_color="inverse"
-                                )
-                                st.write(f"최근 {period}간 팔고 나가는 중입니다.")
-                                st.write(f"단, 일시적 매수 유입 시 평균가는 {int(inst_avg_price):,}원입니다.")
-                        else:
-                            st.metric(
-                                label="🏢 기관 수급 상태", 
-                                value="계산 불가",
-                                delta="이탈 우위",
-                                delta_color="inverse"
-                            )
-                            st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
-
-                    with col3:
-                        if foreign_avg_price:
-                            if total_foreign_net_vol > 0:
-                                st.metric(
-                                    label="🌎 외인 매집 평단", 
-                                    value=f"{int(foreign_avg_price):,} 원",
-                                    delta="매집 중"
-                                )
-                                st.caption(f"순매수량: {foreign_net_vol:,}주")
-                            else:
-                                st.metric(
-                                    label="🌎 외인 수급 상태", 
-                                    value="순매도(이탈) 중",
-                                    delta="이탈 우위",
-                                    delta_color="inverse"
-                                )
-                                st.write(f"최근 {period}간 팔고 나가는 중입니다.")
-                                st.write(f"단, 일시적 매수 유입 시 평균가는 {int(foreign_avg_price):,}원입니다.")
-                        else:
-                            st.metric(
-                                label="🌎 외인 수급 상태", 
-                                value="계산 불가",
-                                delta="이탈 우위",
-                                delta_color="inverse"
-                            )
-                            st.caption(f"최근 {period}간 전체적으로 팔고 나가는 중입니다.")
-                    
                 except Exception as e:
                     st.error("투자자별 데이터를 불러오는 데 실패했습니다.")
                     st.exception(e)
