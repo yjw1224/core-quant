@@ -16,7 +16,6 @@ def render_korea_stock_page():
 
     if load_error:
         st.error(load_error)
-        st.caption("가상환경에서 pip install pykrx 후 다시 실행해 주세요.")
         return
 
     if not universe:
@@ -41,8 +40,8 @@ def render_korea_stock_page():
             else:
                 for item in matched:
                     col1, col2, col3 = st.columns([3, 2, 1])
-                    col1.write(item["name"])
-                    col2.write(item["code"])
+                    col1.write(item["code"])
+                    col2.write(item["name"])
                     if col3.button(
                         "분석 보기",
                         key=f"open-{item['code']}",
