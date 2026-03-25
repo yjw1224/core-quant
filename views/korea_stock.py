@@ -3,6 +3,10 @@ import streamlit as st
 from services.krx_data import find_stocks, load_stock_universe, login_krx
 from pykrx import stock
 
+from datetime import datetime, timedelta
+
+from services.number_to_string import number_to_string
+
 @st.cache_data(ttl=7200, show_spinner=False)
 def fetch_pykrx_data(start_date: str, end_date: str, ticker: str):
     """
@@ -18,7 +22,120 @@ def fetch_pykrx_data(start_date: str, end_date: str, ticker: str):
     
     return login_success, df_ohlcv, df_investor_val, df_investor_vol
 
+
+@st.cache_data(ttl=7200, show_spinner=False)
+def fetch_market_foreign_net(start_date: str, end_date: str, market: str = "KOSPI"):
+    """
+    코스피 시장 전체의 주체별 순매수 데이터를 캐싱합니다.
+    """
+    login_krx()
+
+    df_foreign_net = stock.get_market_trading_value_by_date(start_date, end_date, market)
+    df_kospi_index = stock.get_index_ohlcv_by_date(start_date, end_date, "1001")
+
+    return df_foreign_net, df_kospi_index
+
+
 def render_korea_stock_page():
+    st.subheader("코스피 외국인 포지션 분석")
+    # pykrx로 코스피 지수의 외국인 순매수 데이터 지난 1년치를 불러와서 꺾은선 그래프로 그림
+    today = datetime.today()
+    one_year_ago = today - timedelta(days=365)
+    
+    with st.spinner("코스피 외국인 수급 데이터를 불러오는 중입니다..."):
+        df_foreign_net, df_kospi_index = fetch_market_foreign_net(one_year_ago.strftime("%Y%m%d"), today.strftime("%Y%m%d"), "KOSPI")
+
+        # kospi_short_data.csv 파일에서 '외국인' 행을 읽어오고 df_foreign_options 변수에 저장.
+        import pandas as pd
+        try:
+            df_foreign_options = pd.read_csv("kospi_short_data.csv", parse_dates=['일자'], encoding='utf-8')
+        except UnicodeDecodeError:
+            df_foreign_options = pd.read_csv("kospi_short_data.csv", parse_dates=['일자'], encoding='cp949')
+        df_foreign_options.set_index('일자', inplace=True)
+
+
+    if not df_foreign_net.empty and not df_foreign_options.empty:
+        # df_foreign_net과 df_foreign_options를 한 차트에 겹쳐서 그리기 (Plotly 사용)
+
+        import plotly.graph_objects as go
+        df_foreign_net['누적순매수'] = df_foreign_net['외국인합계'].cumsum()
+
+        fig_foreign = go.Figure()
+
+        fig_foreign.add_trace(
+            go.Scatter(
+                x=df_kospi_index.index, 
+                y=df_kospi_index['종가'], 
+                yaxis='y3',
+                mode='lines', name='코스피 지수', 
+                line=dict(color="#dddddd", width=1),
+                hovertemplate='<b>코스피 지수</b>: %{y:,.0f}<extra></extra>'
+            )
+        )
+
+        fig_foreign.add_trace(
+            go.Scatter(
+                x=df_foreign_net.index, 
+                y=df_foreign_net['누적순매수'],
+                customdata=df_foreign_net['누적순매수'].apply(lambda x: f"{number_to_string(x, '원')}"), # 데이터를 넘겨줌
+                mode='lines', name='코스피 외국인 누적 순매수', 
+                line=dict(color="#ecfa2c", width=2),
+                hovertemplate='<b>코스피 외국인 누적 순매수</b>: %{customdata}<extra></extra>'
+            )
+        )
+
+        fig_foreign.add_trace(
+            go.Bar(
+                x=df_foreign_options.index, 
+                y=df_foreign_options['외국인'], 
+                customdata=df_foreign_options['외국인'].apply(lambda x: number_to_string(x, '원')),
+                name='외국인 공매도 대금',
+                marker=dict(color="#e40057"), # line 대신 marker 사용
+                yaxis='y2',
+                hovertemplate='<b>외국인 공매도</b>: %{customdata}<extra></extra>'
+            )
+        )
+        fig_foreign.update_layout(
+            height=300,
+            margin=dict(l=0, r=0, t=30, b=0),
+            xaxis_title="날짜",
+            yaxis_title="코스피 누적 순매수 대금",
+            yaxis=dict(
+                title="코스피 누적 순매수 대금",
+                showgrid=False
+            ),
+            yaxis2=dict(
+                title="외국인 공매도 대금",
+                overlaying="y",
+                side="right",
+                showgrid=False
+            ),
+            hovermode="x unified",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+
+            xaxis=dict(domain=[0.1, 0.9]), # 왼쪽/오른쪽 축 공간 확보를 위해 x축 폭을 살짝 줄임
+            
+            yaxis3=dict(
+                title="코스피 지수",
+                overlaying='y',
+                side='right',
+                anchor='free',
+                position=0.98,
+                showgrid=False
+            )
+        )
+
+        st.plotly_chart(fig_foreign, use_container_width=True)
+    else:
+        st.warning("코스피 지수의 외국인 순매수 데이터가 존재하지 않습니다.")
+
+
     st.subheader("외국인/기관 수급 및 평단가 추적")
 
     if "selected_stock" not in st.session_state:
@@ -36,8 +153,6 @@ def render_korea_stock_page():
     if not universe:
         st.warning("조회 가능한 종목 데이터가 없습니다.")
         return
-
-    st.caption(f"총 {len(universe):,}개 종목")
 
     if st.session_state.selected_stock is None:
         with st.form("search_form"):
@@ -75,8 +190,6 @@ def render_korea_stock_page():
         if right.button("검색으로", use_container_width=True):
             st.session_state.selected_stock = None
             st.rerun()
-
-        from datetime import datetime, timedelta
         
         today = datetime.today()
         
