@@ -2,6 +2,9 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
+from fredapi import Fred
+from dotenv import load_dotenv
+import os
 
 # 세션 상태 초기화 (페이지 리로드 시 유지)
 if 'is_crisis_count' not in st.session_state:
@@ -11,6 +14,9 @@ start_date = "2000-01-01"
 
 def get_vix_data():
     """데이터만 가져오고 판단만 함 (화면 출력 X)"""
+    load_dotenv(override=True)
+
+
     vix = yf.download("^VIX", start=start_date)
     
     # 멀티인덱스 방어 코드 (droplevel 1 또는 0은 yfinance 버전에 따라 다름)
@@ -18,7 +24,12 @@ def get_vix_data():
         vix.columns = vix.columns.get_level_values(0)
         
     last_price = vix['Close'].iloc[-1]
-    return vix, last_price
+
+    fred = Fred(api_key=os.getenv("FRED_API_KEY"))
+    high_yield_spread = fred.get_series('BAMLH0A0HYM2') # 데이터 가져오기
+    last_hy_spread = high_yield_spread[-1]
+
+    return vix, last_price, high_yield_spread, last_hy_spread
 
 def render_vix_chart(vix):
     """차트 렌더링만 담당"""
@@ -29,6 +40,9 @@ def render_vix_chart(vix):
     fig.add_hline(y=30, line_dash="dot", line_color="#FF4646", line_width=2)
     fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='VIX', showgrid=False))
     st.plotly_chart(fig, use_container_width=True)
+
+def render_high_yield_spread_chart():
+    st.warning("High Yield Bond Spread 데이터는 현재 준비 중입니efaef다.")
 
 FCI_LIST = [
     {"name": "S&P 500 VIX", "description": "VIX 지수가 30을 넘어서면 시장의 불안정성이 큽니다.", "key": "vix", "condition_text": "≥ 30"},
@@ -182,5 +196,7 @@ def render_overall_page():
         )
         if fci['key'] == "vix":
             render_vix_chart(vix_df)
+        elif fci['key'] == "hy_spread":
+            render_high_yield_spread_chart()
         else:
             st.warning(f"{fci['name']} 데이터는 현재 준비 중입니다.")
