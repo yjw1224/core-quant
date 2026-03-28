@@ -2,7 +2,9 @@ import streamlit as st
 
 from views.korea_stock import render_korea_stock_page
 from views.us_stock import render_us_stock_page
+from views.overall import render_overall_page
 
+MENU_OVERALL = "전체"
 MENU_KOREA_STOCK = "국내주식"
 MENU_CRYPTO = "크립토"
 MENU_MACRO = "매크로"
@@ -18,12 +20,15 @@ with st.sidebar:
     
     menu = st.radio(
         "분석할 자산을 선택하세요",
-        (MENU_KOREA_STOCK, MENU_US_STOCK, MENU_CRYPTO, MENU_MACRO)
+        (MENU_OVERALL, MENU_KOREA_STOCK, MENU_US_STOCK, MENU_CRYPTO, MENU_MACRO)
     )
 
 st.title(f"🚀 {menu}")
 
-if menu == MENU_KOREA_STOCK:
+if menu == MENU_OVERALL:
+    render_overall_page()
+
+elif menu == MENU_KOREA_STOCK:
     render_korea_stock_page()
     
 elif menu == MENU_CRYPTO:
