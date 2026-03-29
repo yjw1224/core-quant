@@ -30,13 +30,13 @@ def get_all_data():
 
     fred = Fred(api_key=os.getenv("FRED_API_KEY"))
     high_yield_spread = fred.get_series('BAMLH0A0HYM2', observation_start=start_date) # 데이터 가져오기
-    last_hy_spread = high_yield_spread[-1]
+    last_hy_spread = high_yield_spread.iloc[-1]
 
     nfci_data = fred.get_series('NFCI', observation_start=start_date)
-    last_nfci = nfci_data[-1]
+    last_nfci = nfci_data.iloc[-1]
 
     sloos_data = fred.get_series('DRTSCILM', observation_start=start_date)
-    last_sloos = sloos_data[-1]
+    last_sloos = sloos_data.iloc[-1]
 
     # get OECD_CLI_DATA from OECD_CLI_INDEX.csv
 
@@ -63,13 +63,27 @@ def get_all_data():
     # 결과 데이터프레임 정리
     diffusion_df = pd.DataFrame({'CLI_DI_MoM': cli_di_mom})
 
-    return vix, last_price, high_yield_spread, last_hy_spread, nfci_data, last_nfci, sloos_data, last_sloos, diffusion_df[1:], diffusion_df['CLI_DI_MoM'].iloc[-1]
+    unrate_data = fred.get_series('UNRATE', observation_start=start_date)
+    # FRED 월별 데이터에 간헐적으로 NaN이 섞일 수 있어 최신 구간이 통째로 NaN 되는 것을 방지
+    unrate_data = unrate_data.dropna()
+    sahm_data = unrate_data.rolling(window=3).mean() - unrate_data.rolling(window=12).min()
+    last_sahm = sahm_data.iloc[-1]
+    
+
+    return vix, last_price, high_yield_spread, last_hy_spread, nfci_data, last_nfci, sloos_data, last_sloos, diffusion_df[1:], diffusion_df['CLI_DI_MoM'].iloc[-1], sahm_data, last_sahm
 
 
 def get_all_data_from_session():
     """세션 내에서는 API 응답을 재사용해 불필요한 재호출을 줄입니다."""
-    if 'overall_data_cache' not in st.session_state:
+    csv_mtime = os.path.getmtime('OECD_CLI_INDEX.csv') if os.path.exists('OECD_CLI_INDEX.csv') else None
+    cache_fingerprint = (csv_mtime, pd.Timestamp.now().strftime('%Y-%m'))
+
+    if (
+        'overall_data_cache' not in st.session_state
+        or st.session_state.get('overall_data_cache_fingerprint') != cache_fingerprint
+    ):
         st.session_state.overall_data_cache = get_all_data()
+        st.session_state.overall_data_cache_fingerprint = cache_fingerprint
     return st.session_state.overall_data_cache
 
 def render_vix_chart(vix):
@@ -145,6 +159,16 @@ def render_cli_diffusion_chart(oecd_cli_data):
     fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='Diffusion Index (%)', showgrid=False))
     st.plotly_chart(fig, use_container_width=True)
 
+def render_sahm_chart(sahm_data):
+    sahm_plot = sahm_data.reset_index()
+    sahm_plot.columns = ['Date', 'Sahm_Rule']
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=sahm_plot['Date'], y=sahm_plot['Sahm_Rule'], mode='lines', name='Sahm Rule',
+                             line=dict(color=CHART_LINE_COLOR, width=1)))
+    fig.add_hline(y=0.5, line_dash="dot", line_color=CHART_HORIZONTAL_LINE_COLOR, line_width=2)
+    fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='Sahm Rule Value (%)', showgrid=False))
+    st.plotly_chart(fig, use_container_width=True)
+
 FCI_LIST = [
     {"name": "S&P 500 VIX", "description": "VIX 지수는 S&P 500 옵션의 내재 변동성을 측정한 지표입니다. VIX 지수가 30을 넘어서면 시장의 불안정성이 매우 커졌음을 의미합니다.", "key": "vix", "condition_text": "≥ 30"},
     {"name": "High Yield Bond Spread", "description": "고수익 회사채 스프레드입니다. 이 수치가 높아지면 투자자들이 위험 회피 성향이 강해집니다.", "key": "hy_spread", "condition_text": "≥ 5"},
@@ -154,6 +178,8 @@ FCI_LIST = [
      "key": "sloos", "condition_text": "≥ 25"},
     {"name": "OECD CLI Diffusion Index", "description": "OECD CLI 확산지수(Diffusion Index)는 경기 선행지수의 상승 또는 하락 방향성을 수치화하여 경기 전환점을 포착하는 지표입니다. 지수가 50을 상향 돌파하면 경기 회복의 신호로 보며, 반대로 50을 하회하기 시작하면 본격적인 경기 하강 국면에 진입한 것으로 판단합니다. 특히 지수가 20~30 수준까지 급락할 경우 실물 경제의 침체 가능성이 매우 높은 위험 구간으로 해석됩니다.",
      "key": "oecd_cli", "condition_text": "≤ 50"},
+    {"name": "Sahm Rule", "description": "사움의 법칙(Sahm Rule)은 미국 경제학자 클레어 사움(Clair Sahm)이 제안한 경기 침체 조기 경보 지표입니다. 이 지표는 (지난 3개월 평균 실업률) - (지난 12개월 최저 실업률)이 0.5% 이상인 시점을 경기 침체의 시작으로 간주합니다. 실업률이 급격히 상승하는 초기 단계에서 경제 위기의 신호를 포착하는 데 유용합니다.",
+     "key": "sahm_law", "condition_text": "≥ 0.5"}
 ]
 
 FCI_PERCENTAGE_DESCRIPTION = [
@@ -220,7 +246,7 @@ def render_crisis_gauge(current_count, total_count):
 def render_overall_page():
     
     # --- 1. 로직 처리 (화면 그리기 전에 데이터 먼저 계산) ---
-    vix_df, last_vix, high_yield_spread_data, last_hy_spread, nfci_data, last_nfci, sloos_data, last_sloos, cli_diffuion_data, last_cli_diffusion = get_all_data_from_session()
+    vix_df, last_vix, high_yield_spread_data, last_hy_spread, nfci_data, last_nfci, sloos_data, last_sloos, cli_diffuion_data, last_cli_diffusion, sahm_data, last_sahm = get_all_data_from_session()
 
     IS_CRISIS = [
         {"condition": last_vix >= 30, "data": last_vix},
@@ -228,6 +254,7 @@ def render_overall_page():
         {"condition": last_nfci >= 0, "data": last_nfci},  # Financial Condition Index
         {"condition": last_sloos >= 25, "data": last_sloos},  # SLOOS
         {"condition": last_cli_diffusion <= 50, "data": last_cli_diffusion},  # OECD CLI Diffusion Index
+        {"condition": last_sahm >= 0.5, "data": last_sahm},  # Sahm Rule
     ]
     
     # 위기 카운트 초기화 후 계산
@@ -266,7 +293,7 @@ def render_overall_page():
             })
         summary_df = pd.DataFrame(summary_data)
         summary_df.index = summary_df.index + 1
-        
+
         st.table(summary_df.style.applymap(lambda x: 'color: #ef553b;' if x == '위험' else 'color: #00cc96;' if x == '안전' else '', subset=['위험 여부']))
 
     # --- 3. 상세 지표 리스트 표시 ---
@@ -319,5 +346,7 @@ def render_overall_page():
             render_sloos_chart(sloos_data)
         elif fci['key'] == "oecd_cli":
             render_cli_diffusion_chart(cli_diffuion_data)
+        elif fci['key'] == "sahm_law":
+            render_sahm_chart(sahm_data)
         else:
             st.warning(f"{fci['name']} 데이터는 현재 준비 중입니다.")
