@@ -87,86 +87,79 @@ def get_all_data_from_session():
     return st.session_state.overall_data_cache
 
 def render_vix_chart(vix):
-    """차트 렌더링만 담당"""
-    vix_plot = vix.reset_index()
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=vix_plot['Date'], y=vix_plot['Close'], mode='lines', name='S&P 500 VIX',
-                             line=dict(color=CHART_LINE_COLOR, width=1)))
-    fig.add_hline(y=30, line_dash="dot", line_color=CHART_HORIZONTAL_LINE_COLOR, line_width=2)
-    fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='VIX', showgrid=False))
-    st.plotly_chart(fig, use_container_width=True)
+    render_threshold_line_chart(
+        data=vix,
+        trace_name='S&P 500 VIX',
+        yaxis_title='VIX',
+        threshold_y=30,
+        y_col='Close',
+    )
 
 def render_high_yield_spread_chart(high_yield_spread_data):
-    spread_plot = high_yield_spread_data.reset_index()
-    spread_plot.columns = ['Date', 'Spread']
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=spread_plot['Date'], y=spread_plot['Spread'], mode='lines', name='High Yield Bond Spread',
-                             line=dict(color=CHART_LINE_COLOR, width=1)))
-    fig.add_hline(y=5, line_dash="dot", line_color=CHART_HORIZONTAL_LINE_COLOR, line_width=2)
-    fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='Spread (%)', showgrid=False))
-    st.plotly_chart(fig, use_container_width=True)
+    render_threshold_line_chart(
+        data=high_yield_spread_data,
+        trace_name='High Yield Bond Spread',
+        yaxis_title='Spread (%)',
+        threshold_y=5,
+    )
 
 def render_nfci_chart(nfci_data):
-    # 데이터 정리 (하이일드 함수와 동일한 로직)
-    fci_plot = nfci_data.reset_index()
-    fci_plot.columns = ['Date', 'FCI']
-    
-    fig = go.Figure()
-    
-    # NFCI 지표 선 생성
-    fig.add_trace(go.Scatter(
-        x=fci_plot['Date'], 
-        y=fci_plot['FCI'], 
-        mode='lines', 
-        name='National Financial Conditions Index',
-        line=dict(color=CHART_LINE_COLOR, width=1)
-    ))
-    
-    # 기준선 설정: NFCI는 0을 기준으로 위(위축/위험), 아래(완화/안정)를 판단합니다
-    fig.add_hline(
-        y=0, 
-        line_dash="dot", 
-        line_color=CHART_HORIZONTAL_LINE_COLOR, 
-        line_width=2
+    render_threshold_line_chart(
+        data=nfci_data,
+        trace_name='National Financial Conditions Index',
+        yaxis_title='Index Value (Avg=0)',
+        threshold_y=0,
+        hovermode='x unified',
     )
-    
-    # 레이아웃 설정
-    fig.update_layout(
-        xaxis=dict(title='날짜', type="date"), 
-        yaxis=dict(title='Index Value (Avg=0)', showgrid=False),
-        hovermode="x unified"
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
 
 def render_sloos_chart(sloos_data):
-    sloos_plot = sloos_data.reset_index()
-    sloos_plot.columns = ['Date', 'SLOOS']
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=sloos_plot['Date'], y=sloos_plot['SLOOS'], mode='lines', name='SLOOS',
-                             line=dict(color=CHART_LINE_COLOR, width=1)))
-    fig.add_hline(y=25, line_dash="dot", line_color=CHART_HORIZONTAL_LINE_COLOR, line_width=2)
-    fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='SLOOS (%)', showgrid=False))
-    st.plotly_chart(fig, use_container_width=True)
+    render_threshold_line_chart(
+        data=sloos_data,
+        trace_name='SLOOS',
+        yaxis_title='SLOOS (%)',
+        threshold_y=25,
+    )
 
 def render_cli_diffusion_chart(oecd_cli_data):
-    cli_plot = oecd_cli_data.reset_index()
-    cli_plot.columns = ['Date', 'CLI_DI_MoM']
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=cli_plot['Date'], y=cli_plot['CLI_DI_MoM'], mode='lines', name='OECD CLI Diffusion Index',
-                             line=dict(color=CHART_LINE_COLOR, width=1)))
-    fig.add_hline(y=50, line_dash="dot", line_color=CHART_HORIZONTAL_LINE_COLOR, line_width=2)
-    fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='Diffusion Index (%)', showgrid=False))
-    st.plotly_chart(fig, use_container_width=True)
+    render_threshold_line_chart(
+        data=oecd_cli_data,
+        trace_name='OECD CLI Diffusion Index',
+        yaxis_title='Diffusion Index (%)',
+        threshold_y=50,
+    )
 
 def render_sahm_chart(sahm_data):
-    sahm_plot = sahm_data.reset_index()
-    sahm_plot.columns = ['Date', 'Sahm_Rule']
+    render_threshold_line_chart(
+        data=sahm_data,
+        trace_name='Sahm Rule',
+        yaxis_title='Sahm Rule Value (%)',
+        threshold_y=0.5,
+    )
+
+
+def render_threshold_line_chart(data, trace_name, yaxis_title, threshold_y, y_col=None, hovermode=None):
+    chart_data = data.reset_index()
+    if 'Date' not in chart_data.columns:
+        chart_data = chart_data.rename(columns={chart_data.columns[0]: 'Date'})
+
+    if y_col is None:
+        if len(chart_data.columns) == 2:
+            y_col = chart_data.columns[1]
+        else:
+            y_col = 'value'
+            chart_data = chart_data[['Date']].assign(value=data.values)
+
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=sahm_plot['Date'], y=sahm_plot['Sahm_Rule'], mode='lines', name='Sahm Rule',
+    fig.add_trace(go.Scatter(x=chart_data['Date'], y=chart_data[y_col], mode='lines', name=trace_name,
                              line=dict(color=CHART_LINE_COLOR, width=1)))
-    fig.add_hline(y=0.5, line_dash="dot", line_color=CHART_HORIZONTAL_LINE_COLOR, line_width=2)
-    fig.update_layout(xaxis=dict(title='날짜', type="date"), yaxis=dict(title='Sahm Rule Value (%)', showgrid=False))
+    fig.add_hline(y=threshold_y, line_dash="dot", line_color=CHART_HORIZONTAL_LINE_COLOR, line_width=2)
+    layout_options = dict(
+        xaxis=dict(title='날짜', type="date"),
+        yaxis=dict(title=yaxis_title, showgrid=False),
+    )
+    if hovermode:
+        layout_options['hovermode'] = hovermode
+    fig.update_layout(**layout_options)
     st.plotly_chart(fig, use_container_width=True)
 
 FCI_LIST = [
