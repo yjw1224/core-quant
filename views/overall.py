@@ -247,12 +247,27 @@ def render_overall_page():
     # status_idx = min(int(ratio * len(FCI_PERCENTAGE_DESCRIPTION)), len(FCI_PERCENTAGE_DESCRIPTION)-1)
     # FCI_NOW = FCI_PERCENTAGE_DESCRIPTION[status_idx]
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
         st.write("Financial Crisis Indicator")
         st.header(f"{st.session_state.is_crisis_count} / {total_fci}", help="경제 위기 지표들 중 현재 몇 개가 위기 신호를 보내고 있는지 나타냅니다.")
         render_crisis_gauge(st.session_state.is_crisis_count, total_fci)
+
+    with col2:
+        # 모든 지표를 표로 총 정리
+        summary_data = []
+        for i, fci in enumerate(FCI_LIST):
+            summary_data.append({
+                "지표": fci['name'],
+                "현재값": f"{IS_CRISIS[i]['data']:.2f}",
+                "조건": fci['condition_text'],
+                "위험 여부": "위험" if IS_CRISIS[i]['condition'] else "안전"
+            })
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.index = summary_df.index + 1
+        
+        st.table(summary_df.style.applymap(lambda x: 'color: #ef553b;' if x == '위험' else 'color: #00cc96;' if x == '안전' else '', subset=['위험 여부']))
 
     # --- 3. 상세 지표 리스트 표시 ---
     for fci in FCI_LIST:
