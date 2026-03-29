@@ -162,29 +162,8 @@ def render_threshold_line_chart(data, trace_name, yaxis_title, threshold_y, y_co
     fig.update_layout(**layout_options)
     st.plotly_chart(fig, use_container_width=True)
 
-FCI_LIST = [
-    {"name": "S&P 500 VIX", "description": "VIX 지수는 S&P 500 옵션의 내재 변동성을 측정한 지표입니다. VIX 지수가 30을 넘어서면 시장의 불안정성이 매우 커졌음을 의미합니다.", "key": "vix", "condition_text": "≥ 30"},
-    {"name": "High Yield Bond Spread", "description": "고수익 회사채 스프레드입니다. 이 수치가 높아지면 투자자들이 위험 회피 성향이 강해집니다.", "key": "hy_spread", "condition_text": "≥ 5"},
-    {"name": "Financial Condition Index (FCI)", "description": "금융조건지수(FCI)는 시카고 연준이 발표하는 지표로, 주식·채권·자산 가격 등 100여 개가 넘는 금융 변수를 종합해 현재 시장에서 '돈이 얼마나 원활하게 돌고 있는지'를 측정합니다. 역사적 평균인 0을 기준으로, 지수가 0보다 커질수록 시장의 자금 조달 여건이 빡빡해지고 대출 문턱이 높아지는 \'위축 상태\'임을 뜻합니다. 통상적으로 지수가 0.0을 상향 돌파하기 시작하면 시장에 경고등이 켜진 것으로 보며, 0.5에서 1.0 이상으로 급격히 치솟으면 과거 금융위기나 팬데믹 때와 같은 실질적인 경제 위기가 진행 중임을 시사합니다.",
-      "key": "fci", "condition_text": "≥ 0"},
-    {"name": "SLOOS", "description": "SLOOS는 은행들이 대출 문턱을 얼마나 높였는지 보여주는 지표로, 수치가 플러스(+)일수록 대출 조건이 까다로워지는 유동성 위축을 의미합니다. 통상 20~25%를 넘어서면 경기 둔화의 전조 증상으로 판단하며, 40%를 돌파할 경우 역사적으로 예외 없는 경기 침체가 발생했습니다.",
-     "key": "sloos", "condition_text": "≥ 25"},
-    {"name": "OECD CLI Diffusion Index", "description": "OECD CLI 확산지수(Diffusion Index)는 경기 선행지수의 상승 또는 하락 방향성을 수치화하여 경기 전환점을 포착하는 지표입니다. 지수가 50을 상향 돌파하면 경기 회복의 신호로 보며, 반대로 50을 하회하기 시작하면 본격적인 경기 하강 국면에 진입한 것으로 판단합니다. 특히 지수가 20~30 수준까지 급락할 경우 실물 경제의 침체 가능성이 매우 높은 위험 구간으로 해석됩니다.",
-     "key": "oecd_cli", "condition_text": "≤ 50"},
-    {"name": "Sahm Rule", "description": "사움의 법칙(Sahm Rule)은 미국 경제학자 클레어 사움(Clair Sahm)이 제안한 경기 침체 조기 경보 지표입니다. 이 지표는 (지난 3개월 평균 실업률) - (지난 12개월 최저 실업률)이 0.5% 이상인 시점을 경기 침체의 시작으로 간주합니다. 실업률이 급격히 상승하는 초기 단계에서 경제 위기의 신호를 포착하는 데 유용합니다.",
-     "key": "sahm_law", "condition_text": "≥ 0.5"}
-]
-
-FCI_PERCENTAGE_DESCRIPTION = [
-    {"percentage": 0.25, "description": "안정", "color": "#00CC96"},
-    {"percentage": 0.5, "description": "주의", "color": "#FFA15A"},
-    {"percentage": 0.75, "description": "위험", "color": "#EF553B"},
-    {"percentage": 1.0, "description": "경기 침체", "color": "#7D0000"},
-]
-
 def render_crisis_gauge(current_count, total_count):
-    # 구간별 색상 설정
-    colors = ['#00CC96', '#7D0000']
+    # colors = ['#00CC96', '#7D0000']
 
     fig = go.Figure()
 
@@ -241,48 +220,83 @@ def render_overall_page():
     # --- 1. 로직 처리 (화면 그리기 전에 데이터 먼저 계산) ---
     vix_df, last_vix, high_yield_spread_data, last_hy_spread, nfci_data, last_nfci, sloos_data, last_sloos, cli_diffuion_data, last_cli_diffusion, sahm_data, last_sahm = get_all_data_from_session()
 
-    IS_CRISIS = [
-        {"condition": last_vix >= 30, "data": last_vix},
-        {"condition": last_hy_spread >= 5, "data": last_hy_spread},  # High Yield Bond Spread
-        {"condition": last_nfci >= 0, "data": last_nfci},  # Financial Condition Index
-        {"condition": last_sloos >= 25, "data": last_sloos},  # SLOOS
-        {"condition": last_cli_diffusion <= 50, "data": last_cli_diffusion},  # OECD CLI Diffusion Index
-        {"condition": last_sahm >= 0.5, "data": last_sahm},  # Sahm Rule
+    ECONOMIC_CRISIS_LIST = [
+        {
+            "name": "S&P 500 VIX",
+            "description": "VIX 지수는 S&P 500 옵션의 내재 변동성을 측정한 지표입니다. VIX 지수가 30을 넘어서면 시장의 불안정성이 매우 커졌음을 의미합니다.",
+            "key": "vix",
+            "condition_text": "≥ 30",
+            "condition": last_vix >= 30,
+            "data": last_vix,
+        },
+        {
+            "name": "High Yield Bond Spread",
+            "description": "고수익 회사채 스프레드입니다. 이 수치가 높아지면 투자자들이 위험 회피 성향이 강해집니다.",
+            "key": "hy_spread",
+            "condition_text": "≥ 5",
+            "condition": last_hy_spread >= 5,
+            "data": last_hy_spread,
+        },
+        {
+            "name": "Financial Condition Index (FCI)",
+            "description": "금융조건지수(FCI)는 시카고 연준이 발표하는 지표로, 주식·채권·자산 가격 등 100여 개가 넘는 금융 변수를 종합해 현재 시장에서 '돈이 얼마나 원활하게 돌고 있는지'를 측정합니다. 역사적 평균인 0을 기준으로, 지수가 0보다 커질수록 시장의 자금 조달 여건이 빡빡해지고 대출 문턱이 높아지는 '위축 상태'임을 뜻합니다. 통상적으로 지수가 0.0을 상향 돌파하기 시작하면 시장에 경고등이 켜진 것으로 보며, 0.5에서 1.0 이상으로 급격히 치솟으면 과거 금융위기나 팬데믹 때와 같은 실질적인 경제 위기가 진행 중임을 시사합니다.",
+            "key": "fci",
+            "condition_text": "≥ 0",
+            "condition": last_nfci >= 0,
+            "data": last_nfci,
+        },
+        {
+            "name": "SLOOS",
+            "description": "SLOOS는 은행들이 대출 문턱을 얼마나 높였는지 보여주는 지표로, 수치가 플러스(+)일수록 대출 조건이 까다로워지는 유동성 위축을 의미합니다. 통상 20~25%를 넘어서면 경기 둔화의 전조 증상으로 판단하며, 40%를 돌파할 경우 역사적으로 예외 없는 경기 침체가 발생했습니다.",
+            "key": "sloos",
+            "condition_text": "≥ 25",
+            "condition": last_sloos >= 25,
+            "data": last_sloos,
+        },
+        {
+            "name": "OECD CLI Diffusion Index",
+            "description": "OECD CLI 확산지수(Diffusion Index)는 경기 선행지수의 상승 또는 하락 방향성을 수치화하여 경기 전환점을 포착하는 지표입니다. 지수가 50을 상향 돌파하면 경기 회복의 신호로 보며, 반대로 50을 하회하기 시작하면 본격적인 경기 하강 국면에 진입한 것으로 판단합니다. 특히 지수가 20~30 수준까지 급락할 경우 실물 경제의 침체 가능성이 매우 높은 위험 구간으로 해석됩니다.",
+            "key": "oecd_cli",
+            "condition_text": "≤ 50",
+            "condition": last_cli_diffusion <= 50,
+            "data": last_cli_diffusion,
+        },
+        {
+            "name": "Sahm Rule",
+            "description": "사움의 법칙(Sahm Rule)은 미국 경제학자 클레어 사움(Clair Sahm)이 제안한 경기 침체 조기 경보 지표입니다. 이 지표는 (지난 3개월 평균 실업률) - (지난 12개월 최저 실업률)이 0.5% 이상인 시점을 경기 침체의 시작으로 간주합니다. 실업률이 급격히 상승하는 초기 단계에서 경제 위기의 신호를 포착하는 데 유용합니다.",
+            "key": "sahm_law",
+            "condition_text": "≥ 0.5",
+            "condition": last_sahm >= 0.5,
+            "data": last_sahm,
+        },
     ]
     
     # 위기 카운트 초기화 후 계산
-    current_crisis = 0
-    for IS_CRISIS_FLAG in IS_CRISIS:
-        if IS_CRISIS_FLAG["condition"]:
-            current_crisis += 1
+    current_crisis = sum(1 for crisis in ECONOMIC_CRISIS_LIST if crisis["condition"])
     # 다른 지표들도 이곳에서 계산하여 current_crisis에 더함
     
     st.session_state.is_crisis_count = current_crisis
     
     # --- 2. 상단 메트릭 표시 ---
-    total_fci = len(FCI_LIST)
+    total_fci = len(ECONOMIC_CRISIS_LIST)
     ratio = st.session_state.is_crisis_count / total_fci
-    
-    # 상태 설명 매칭
-    # status_idx = min(int(ratio * len(FCI_PERCENTAGE_DESCRIPTION)), len(FCI_PERCENTAGE_DESCRIPTION)-1)
-    # FCI_NOW = FCI_PERCENTAGE_DESCRIPTION[status_idx]
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.write("Financial Crisis Indicator")
+        st.write("Economic Crisis Indicator")
         st.header(f"{st.session_state.is_crisis_count} / {total_fci}", help="경제 위기 지표들 중 현재 몇 개가 위기 신호를 보내고 있는지 나타냅니다.")
         render_crisis_gauge(st.session_state.is_crisis_count, total_fci)
 
     with col2:
         # 모든 지표를 표로 총 정리
         summary_data = []
-        for i, fci in enumerate(FCI_LIST):
+        for crisis in ECONOMIC_CRISIS_LIST:
             summary_data.append({
-                "지표": fci['name'],
-                "현재값": f"{IS_CRISIS[i]['data']:.2f}",
-                "조건": fci['condition_text'],
-                "위험 여부": "위험" if IS_CRISIS[i]['condition'] else "안전"
+                "지표": crisis['name'],
+                "현재값": f"{crisis['data']:.2f}",
+                "조건": crisis['condition_text'],
+                "위험 여부": "위험" if crisis['condition'] else "안전"
             })
         summary_df = pd.DataFrame(summary_data)
         summary_df.index = summary_df.index + 1
@@ -290,9 +304,8 @@ def render_overall_page():
         st.table(summary_df.style.applymap(lambda x: 'color: #ef553b;' if x == '위험' else 'color: #00cc96;' if x == '안전' else '', subset=['위험 여부']))
 
     # --- 3. 상세 지표 리스트 표시 ---
-    for fci in FCI_LIST:
-        i = FCI_LIST.index(fci)
-        st.markdown(f"### {fci['name']}", help=fci['description'])
+    for crisis in ECONOMIC_CRISIS_LIST:
+        st.markdown(f"### {crisis['name']}", help=crisis['description'])
 
         st.markdown(
         f"""
@@ -309,37 +322,37 @@ def render_overall_page():
                 font-weight: 600; 
                 color: #f0f6fc;
             ">
-                {IS_CRISIS[i]['data']:.2f}
+                {crisis['data']:.2f}
             </span>
             <span style="
                 font-size: 16px; 
                 font-weight: 400; 
                 color: #8b949e;
             ">
-                {fci['condition_text']}
+                {crisis['condition_text']}
             </span>
             <span style="
                 font-size: 16px; 
                 font-weight: 400; 
-                color: {"#ef553b" if IS_CRISIS[i]['condition'] else "#00cc96"};
+                color: {"#ef553b" if crisis['condition'] else "#00cc96"};
                 ">
-                <b>{"위험" if IS_CRISIS[i]['condition'] else "안전"}</b>
+                <b>{"위험" if crisis['condition'] else "안전"}</b>
             </span>
         </div>
         """,
         unsafe_allow_html=True
         )
-        if fci['key'] == "vix":
+        if crisis['key'] == "vix":
             render_vix_chart(vix_df)
-        elif fci['key'] == "hy_spread":
+        elif crisis['key'] == "hy_spread":
             render_high_yield_spread_chart(high_yield_spread_data)
-        elif fci['key'] == "fci":
+        elif crisis['key'] == "fci":
             render_nfci_chart(nfci_data)
-        elif fci['key'] == "sloos":
+        elif crisis['key'] == "sloos":
             render_sloos_chart(sloos_data)
-        elif fci['key'] == "oecd_cli":
+        elif crisis['key'] == "oecd_cli":
             render_cli_diffusion_chart(cli_diffuion_data)
-        elif fci['key'] == "sahm_law":
+        elif crisis['key'] == "sahm_law":
             render_sahm_chart(sahm_data)
         else:
-            st.warning(f"{fci['name']} 데이터는 현재 준비 중입니다.")
+            st.warning(f"{crisis['name']} 데이터는 현재 준비 중입니다.")
