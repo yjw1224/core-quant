@@ -3,6 +3,8 @@ import streamlit as st
 from views.korea_stock import render_korea_stock_page
 from views.us_stock import render_us_stock_page
 from views.overall import render_overall_page
+from views.crypto import render_crypto_page
+from views.macro import render_macro_page
 
 MENU_OVERALL = "전체"
 MENU_KOREA_STOCK = "국내주식"
@@ -32,12 +34,10 @@ elif menu == MENU_KOREA_STOCK:
     render_korea_stock_page()
     
 elif menu == MENU_CRYPTO:
-    st.subheader("MVRV Z-Score 및 온체인 수익 분석")
-    # 여기에 Santiment/DefiLlama 로직 추가 예정
+    render_crypto_page()
     
 elif menu == MENU_MACRO:
-    st.subheader("OECD CLI 확산지수 및 금리 스프레드")
-    # 여기에 FRED/OECD 로직 추가 예정
+    render_macro_page()
 
 elif menu == MENU_US_STOCK:
     render_us_stock_page()
